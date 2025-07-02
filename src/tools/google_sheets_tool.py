@@ -130,3 +130,21 @@ class GoogleSheetsTool:
         except Exception as e:
             print(f"An error occurred while ensuring columns exist: {e}")
             return None
+
+    def get_all_column_values(self, column_name: str) -> list:
+        """Returns a list of all values in a specific column."""
+        try:
+            header = self.worksheet.row_values(1)
+            if column_name not in header:
+                print(f"Warning: Column '{column_name}' not found in sheet.")
+                return []
+            
+            col_index = header.index(column_name) + 1
+            values = self.worksheet.col_values(col_index)
+            
+            # Return all values except the header itself
+            return values[1:] if values else []
+            
+        except Exception as e:
+            print(f"An error occurred while fetching column values: {e}")
+            return []

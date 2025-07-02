@@ -27,14 +27,29 @@ def scrape_leads(location, max_leads, clear_sheet):
     # Ensure all required columns are present in the sheet
     sheets_tool.ensure_columns_exist(ALL_COLUMNS)
     
+    # Get existing websites to avoid duplicates
+    print("Fetching existing websites to prevent duplicates...")
+    existing_websites = sheets_tool.get_all_column_values("Website")
+    existing_websites = set(filter(None, existing_websites)) # Filter out empty strings and create a set for fast lookups
+    print(f"Found {len(existing_websites)} existing websites in the sheet.")
+
     results = maps_tool.find_hvac_companies(location, max_leads=max_leads)
     leads_df = pd.DataFrame(results['leads'])
 
     if not leads_df.empty:
-        # Add a status column for tracking, the rest will be aligned by append_rows
-        leads_df['Status'] = 'New'
-        sheets_tool.append_rows(leads_df)
-        print(f"Successfully scraped and saved {len(leads_df)} leads.")
+        # Filter out leads that are already in the sheet based on website
+        original_count = len(leads_df)
+        leads_df = leads_df[~leads_df['Website'].isin(existing_websites)]
+        new_leads_count = len(leads_df)
+        print(f"Found {original_count} leads, {new_leads_count} are new.")
+
+        if new_leads_count > 0:
+            # Add a status column for tracking, the rest will be aligned by append_rows
+            leads_df['Status'] = 'New'
+            sheets_tool.append_rows(leads_df)
+            print(f"Successfully scraped and saved {new_leads_count} new leads.")
+        else:
+            print("No new unique leads to add.")
     else:
         print("No leads found.")
 
@@ -200,6 +215,7 @@ def synthesize_email():
         Would you be open to a quick call next week to see if it's worth exploring?
 
         Best,
+        
         Daniel Laderman
         """
         
