@@ -33,25 +33,20 @@ def scrape_leads(location, max_leads, clear_sheet):
     existing_websites = set(filter(None, existing_websites)) # Filter out empty strings and create a set for fast lookups
     print(f"Found {len(existing_websites)} existing websites in the sheet.")
 
-    results = maps_tool.find_hvac_companies(location, max_leads=max_leads)
+    results = maps_tool.find_hvac_companies(location, max_leads=max_leads, existing_websites=existing_websites)
     leads_df = pd.DataFrame(results['leads'])
 
     if not leads_df.empty:
-        # Filter out leads that are already in the sheet based on website
-        original_count = len(leads_df)
-        leads_df = leads_df[~leads_df['Website'].isin(existing_websites)]
         new_leads_count = len(leads_df)
-        print(f"Found {original_count} leads, {new_leads_count} are new.")
+        print(f"Found {new_leads_count} new leads to add.")
 
         if new_leads_count > 0:
             # Add a status column for tracking, the rest will be aligned by append_rows
             leads_df['Status'] = 'New'
             sheets_tool.append_rows(leads_df)
             print(f"Successfully scraped and saved {new_leads_count} new leads.")
-        else:
-            print("No new unique leads to add.")
     else:
-        print("No leads found.")
+        print("No new leads found.")
 
 def enrich_leads():
     """Enrich leads by finding contact information for each website."""
@@ -94,7 +89,7 @@ def enrich_leads():
     # Step 2: If no email from scraping, use a focused Perplexity search.
     if not final_email:
         print("Step 2: Asking Perplexity for the best contact email...")
-        email_query = f"What is the best contact email address for the company '{company_name}' with website {website_url}?"
+        email_query = f"Find me the best email to contact {website_url} "
         perplexity_email_result = search_tool.search_internet(email_query)
         
         # Use regex to find emails in the result. It's more reliable for this specific task.
@@ -202,7 +197,7 @@ def synthesize_email():
 
         Hi [Contact Name],
 
-        Hope you're doing well. I came across {company_name} and was really impressed by [mention something positive from the reviews or their general reputation].
+        Hope you're doing well. I came across {company_name} and was really impressed by [mention a particular positive review].
 
         I run a small AI automation consultancy focused specifically on HVAC businesses. Right now, we're offering a free audit to help companies like yours identify ways to:
 
@@ -244,7 +239,7 @@ def send_email_command():
     """Sends a personalized email to a lead."""
     required_vars = ["SMTP_SERVER", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SENDER_EMAIL"]
     if not all(os.getenv(var) for var in required_vars):
-        print("Error: One or more SMTP environment variables are not set in .env file. Cannot send email.")
+        print("Error: Missing one or more required environment variables for sending email.")
         return
 
     print("Sending email...")
@@ -255,8 +250,8 @@ def send_email_command():
 
     if lead_to_send:
         recipient_email = lead_to_send.get('Email')
+        company_name = lead_to_send.get('Business Name', '')
         email_draft = lead_to_send.get('Email Draft')
-        company_name = lead_to_send.get('Business Name')
         
         if recipient_email and recipient_email != 'Not Found' and email_draft:
             # Simple subject line, can be improved
@@ -270,12 +265,31 @@ def send_email_command():
                 "Status": "Sent",
                 "Email Sent Date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            sheets_tool.update_row(lead_to_send['row_index'], update_data)
+            update_result = sheets_tool.update_row(lead_to_send['row_index'], update_data)
+            if "Successfully" not in update_result:
+                print(f"Failed to update status for {company_name}. Please check the sheet manually.")
         else:
             print(f"Cannot send email for {company_name}. Missing email address or draft.")
-            sheets_tool.update_row(lead_to_send['row_index'], {"Status": "Send Failed"})
+            update_result = sheets_tool.update_row(lead_to_send['row_index'], {"Status": "Send Failed"})
+            if "Successfully" not in update_result:
+                print(f"Failed to update status for {company_name} to 'Send Failed'. Please check the sheet manually.")
     else:
         print("No drafted emails to send.")
+
+
+def reset_failed_command():
+    """Resets the status of a lead from 'Send Failed' to 'Drafted'."""
+    print("Resetting failed email status...")
+    sheets_tool = GoogleSheetsTool()
+
+    lead_to_reset = sheets_tool.get_next_task(status_to_find='Send Failed')
+
+    if lead_to_reset:
+        company_name = lead_to_reset.get('Business Name', '')
+        print(f"Resetting status for {company_name} from 'Send Failed' to 'Drafted'.")
+        sheets_tool.update_row(lead_to_reset['row_index'], {"Status": "Drafted"})
+    else:
+        print("No leads with 'Send Failed' status found.")
 
 
 def run_follow_up_campaigns():
@@ -315,6 +329,9 @@ def main():
     # Send command
     subparsers.add_parser("send", help="Send a personalized email")
     
+    # Reset Failed command
+    subparsers.add_parser("reset_failed", help="Reset a lead's status from 'Send Failed' to 'Drafted'")
+
     # Follow-up command
     subparsers.add_parser("followup", help="Run follow-up campaigns")
 
@@ -330,6 +347,8 @@ def main():
         synthesize_email()
     elif args.command == "send":
         send_email_command()
+    elif args.command == "reset_failed":
+        reset_failed_command()
     elif args.command == "followup":
         run_follow_up_campaigns()
 

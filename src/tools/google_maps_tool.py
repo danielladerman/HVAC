@@ -12,9 +12,10 @@ class GoogleMapsTool:
             raise ValueError("Google Maps API key is required. Please set the GOOGLE_MAPS_API_KEY environment variable.")
         self.gmaps = googlemaps.Client(key=self.api_key)
 
-    def find_hvac_companies(self, location: str, max_leads: int = 50) -> dict:
+    def find_hvac_companies(self, location: str, max_leads: int = 50, existing_websites: set = set()) -> dict:
         """
-        Finds multiple HVAC companies in a specific location and returns their details.
+        Finds multiple HVAC companies in a specific location and returns their details,
+        skipping any companies whose website is in the existing_websites set.
         """
         query = f"HVAC companies in {location}"
         places_result = self.gmaps.places(query=query)
@@ -30,10 +31,15 @@ class GoogleMapsTool:
                 fields = ['name', 'website', 'formatted_phone_number']
                 place_details = self.gmaps.place(place_id=place_id, fields=fields).get('result', {})
                 
+                website = place_details.get('website')
+                if website in existing_websites:
+                    print(f"Skipping existing lead: {place_details.get('name')}")
+                    continue
+
                 # The official googlemaps library returns 'website', not 'websiteUri'
                 leads.append({
                     "Business Name": place_details.get('name'),
-                    "Website": place_details.get('website'),
+                    "Website": website,
                     "Phone Number": place_details.get('formatted_phone_number')
                 })
 
