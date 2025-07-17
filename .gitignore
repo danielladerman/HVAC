@@ -58,6 +58,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Google Cloud credentials
+intense-hour-427605-v6-4f484685ddf0.json
+
 # IDE-specific
 .idea/
 .vscode/
